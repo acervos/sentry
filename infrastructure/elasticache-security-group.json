@@ -1,0 +1,53 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters": {
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Default": "vpc-"
+    }
+  },
+  "Resources": {
+    "ElasticacheComponentSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "GroupDescription": "A component security group allowing access only to redis"
+      }
+    },
+    "RedisSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Elasticache security group",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "6379",
+            "ToPort": "6379",
+            "SourceSecurityGroupId": {
+              "Ref": "ElasticacheComponentSecurityGroup"
+            }
+          }
+        ],
+        "VpcId": {
+          "Ref": "VpcId"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "ElasticacheSecurityGroup": {
+      "Value": {
+        "Ref": "ElasticacheComponentSecurityGroup"
+      },
+      "Description": "Security Group for allowing access to Redis"
+    },
+    "RedisSecurityGroup": {
+      "Value": {
+        "Ref": "RedisSecurityGroup"
+      },
+      "Description": "Security Group for allowing access to Redis"
+    }
+  }
+}

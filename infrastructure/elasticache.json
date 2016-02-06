@@ -1,0 +1,57 @@
+{
+  "Parameters": {
+    "VpcSecurityGroupIds": {
+      "Type": "String"
+    },
+    "CacheParameterGroupName": {
+      "Type": "String",
+      "Default": "sentry-redis"
+    },
+    "CacheNodeType": {
+      "Type": "String",
+      "Default": "cache.m1.small"
+    },
+    "CacheSubnetGroupName": {
+      "Type": "String",
+      "Default": "sentry-redis"
+    },
+    "ClusterName": {
+      "Type": "String",
+      "Default": "sentry-redis"
+    },
+    "NumCacheNodes": {
+      "Type": "String",
+      "Default": "1"
+    }
+  },
+  "Resources": {
+    "ServiceComponentElasticache": {
+      "Type": "AWS::ElastiCache::CacheCluster",
+      "Properties": {
+        "CacheNodeType": {
+          "Ref": "CacheNodeType"
+        },
+        "CacheParameterGroupName": {
+          "Ref": "CacheParameterGroupName"
+        },
+        "CacheSubnetGroupName": {
+          "Ref": "CacheSubnetGroupName"
+        },
+        "ClusterName": {
+          "Ref": "ClusterName"
+        },
+        "Engine": "redis",
+        "EngineVersion": "2.8.24",
+        "NumCacheNodes": {
+          "Ref": "NumCacheNodes"
+        },
+        "SnapshotRetentionLimit": 1,
+        "VpcSecurityGroupIds": [
+          {
+            "Ref": "VpcSecurityGroupIds"
+          }
+        ]
+      }
+    }
+  }
+}

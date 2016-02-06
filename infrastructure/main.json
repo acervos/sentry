@@ -1,0 +1,361 @@
+{
+  "Description": "A Sentry stack for AWS",
+  "Parameters": {
+    "ImageId": {
+      "Description": "The AMI to use for this component - YUM compliant required",
+      "Type": "String",
+      "Default": "ami-bff32ccc"
+    },
+    "InstanceType": {
+      "Description": "The size of the EC2 instances",
+      "Default": "t2.medium",
+      "Type": "String"
+    },
+    "VpcId": {
+      "Description": "The Id of the VPC to attach the environment to",
+      "Type": "AWS::EC2::VPC::Id",
+      "Default": "vpc-"
+    },
+    "KeyName": {
+      "Description": "Name of existing EC2 keypair to enable SSH access to the created instances",
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "PublicSubnets": {
+      "Description": "The id of public subnet 1",
+      "Type": "List<AWS::EC2::Subnet::Id>"
+    },
+    "PostreSQLsecuritygroup": {
+      "Description": "The id of the RDS SecurityGroup",
+      "Type": "String",
+      "Default": "sg-"
+    },
+    "RedisComponentSecurityGroup": {
+      "Description": "The id of the Redis SecurityGroup",
+      "Type": "String",
+      "Default": "sg-"
+    },
+    "SentryConfigURL": {
+      "Description": "The URL for the Sentry config file",
+      "Type": "String"
+    },
+    "SentryYamlFile": {
+      "Description": "The URL for the Sentry sentry yaml file",
+      "Type": "String"
+    },
+    "UserEmail": {
+      "Description": "The username for the super user for Sentry",
+      "Type": "String"
+    },
+    "UserPassword": {
+      "Description": "The password for the super user for Sentry",
+      "Type": "String"
+    }
+  },
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "LoadBalancerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "SecurityGroupIngress": [
+          {
+            "ToPort": "80",
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "GroupDescription": "An ELB group allowing access only to from the corresponding component"
+      }
+    },
+    "ComponentElasticLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "Subnets": {
+          "Ref": "PublicSubnets"
+        },
+        "Listeners": [
+          {
+            "InstancePort": "8080",
+            "Protocol": "tcp",
+            "InstanceProtocol": "tcp",
+            "LoadBalancerPort": "80"
+          }
+        ],
+        "CrossZone": false,
+        "SecurityGroups": [
+          {
+            "Ref": "LoadBalancerSecurityGroup"
+          }
+        ],
+        "HealthCheck": {
+          "HealthyThreshold": 3,
+          "Interval": 10,
+          "Timeout": 5,
+          "UnhealthyThreshold": 10,
+          "Target": "HTTP:8080/_health/"
+        }
+      }
+    },
+    "ComponentSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "SecurityGroupIngress": [
+          {
+            "ToPort": "8080",
+            "IpProtocol": "tcp",
+            "FromPort": "8080",
+            "SourceSecurityGroupId": {
+              "Ref": "LoadBalancerSecurityGroup"
+            }
+          },
+          {
+            "FromPort": 22,
+            "ToPort": 22,
+            "IpProtocol": "tcp",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "GroupDescription": "A component security group allowing access only from the corresponding ELB"
+      }
+    },
+    "ComponentLaunchConfiguration": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "IamInstanceProfile": {
+          "Ref": "ComponentInstanceProfile"
+        },
+        "ImageId": {
+          "Ref": "ImageId"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "ComponentSecurityGroup"
+          },
+          {
+            "Ref": "PostreSQLsecuritygroup"
+          },
+          {
+            "Ref": "RedisComponentSecurityGroup"
+          }
+        ],
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#cloud-config",
+                "\n",
+                "runcmd:\n",
+                "- yum update -y\n",
+                "- yum install -y wget httpd python-setuptools python-pip python-devel libxslt-devel libxml2-devel zlib-devel libffi-devel openssl-devel libpqxx-devel libyaml-devel gcc postgresql-devel python27-virtualenv\n",
+                "- mkdir -p /www/sentry/ /etc/sentry\n",
+                "- touch /etc/supervisord.conf\n",
+                "- chown ec2-user:ec2-user /etc/supervisord.conf\n",
+                "- chown -R ec2-user:ec2-user /www/sentry/ /etc/sentry\n",
+                "- su ec2-user\n",
+                "- virtualenv /www/sentry/\n",
+                "- source /www/sentry/bin/activate\n",
+                "- pip install sentry supervisor\n",
+                "- pip install https://github.com/getsentry/sentry-auth-github/archive/master.zip\n",
+                "- sudo chown -R ec2-user:ec2-user /www/sentry/\n",
+                "- wget https://raw.githubusercontent.com/acervos/sentry/master/sentry.conf -O /etc/httpd/conf.d/sentry.conf\n",
+                "- wget https://raw.githubusercontent.com/acervos/sentry/master/sentry.conf -O - >> /etc/supervisord.conf\n",
+                "- service httpd restart\n",
+                "- echo_supervisord_conf > /etc/supervisord.conf\n",
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "- wget ",
+                      {
+                        "Ref": "SentryConfigURL"
+                      },
+                      " -O /etc/sentry/sentry.conf.py\n"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "- wget ",
+                      {
+                        "Ref": "SentryYamlFile"
+                      },
+                      " -O /etc/sentry/config.yaml\n"
+                    ]
+                  ]
+                },
+                "- SENTRY_CONF=/etc/sentry sentry upgrade --noinput\n",
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "- SENTRY_CONF=/etc/sentry sentry createuser --email ",
+                      {
+                        "Ref": "UserEmail"
+                      },
+                      " --password ",
+                      {
+                        "Ref": "UserPassword"
+                      },
+                       " --superuser --no-input\n"
+                    ]
+                  ]
+                },
+                "- supervisord -u ec2-user -c /etc/supervisord.conf\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "ComponentAutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "UpdatePolicy": {
+        "AutoScalingRollingUpdate": {
+          "PauseTime": "PT0S",
+          "MaxBatchSize": 1,
+          "MinInstancesInService": 1
+        }
+      },
+      "Properties": {
+        "LoadBalancerNames": [
+          {
+            "Ref": "ComponentElasticLoadBalancer"
+          }
+        ],
+        "MinSize": 2,
+        "MaxSize": 3,
+        "LaunchConfigurationName": {
+          "Ref": "ComponentLaunchConfiguration"
+        },
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "Tags": [
+          {
+            "PropagateAtLaunch": true,
+            "Value": "sentry",
+            "Key": "Name"
+          }
+        ]
+      }
+    },
+    "ComponentScalingPolicy": {
+      "Type": "AWS::AutoScaling::ScalingPolicy",
+      "Properties": {
+        "ScalingAdjustment": 1,
+        "AutoScalingGroupName": {
+          "Ref": "ComponentAutoScalingGroup"
+        },
+        "AdjustmentType": "ChangeInCapacity"
+      }
+    },
+    "ComponentInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "ComponentRole"
+          }
+        ]
+      }
+    },
+    "SentryComponentPolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "cloudwatch:*"
+              ],
+              "Resource": [
+                "*"
+              ],
+              "Effect": "Allow"
+            },
+            {
+              "Action": [
+                "cloudformation:Describe*"
+              ],
+              "Resource": [
+                "*"
+              ],
+              "Effect": "Allow"
+            },
+            {
+              "Action": [
+                "ec2:Describe*"
+              ],
+              "Resource": [
+                "*"
+              ],
+              "Effect": "Allow"
+            }
+          ]
+        },
+        "PolicyName": "SentryComponentPolicy",
+        "Roles": [
+          {
+            "Ref": "ComponentRole"
+          }
+        ]
+      }
+    },
+    "ComponentRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "sts:AssumeRole"
+              ],
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "WebsiteURL": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            {
+              "Fn::GetAtt": [
+                "ComponentElasticLoadBalancer",
+                "DNSName"
+              ]
+            }
+          ]
+        ]
+      },
+      "Description": "URL for newly created grafana application"
+    }
+  }
+}

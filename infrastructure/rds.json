@@ -1,0 +1,129 @@
+{
+  "Description": "A Sentry DB AWS template",
+  "Parameters": {
+    "AllocatedStorage": {
+      "Type": "String",
+      "Default": "5"
+    },
+    "BackupRetentionPeriod": {
+      "Type": "String",
+      "Default": "7"
+    },
+    "DBInstanceClass": {
+      "Type": "String",
+      "Default": "db.t2.medium"
+    },
+    "DBInstanceIdentifier": {
+      "Type": "String",
+      "Default": "sentry"
+    },
+    "DBName": {
+      "Type": "String",
+      "Default": "sentry",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+    },
+    "MasterUsername": {
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+      "Description": "Username for database access"
+    },
+    "MasterUserPassword": {
+      "NoEcho": true,
+      "Type": "String",
+      "Description": "Password for database access - minimum 8 characters",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "ConstraintDescription": "must contain 8 alphanumeric characters."
+    },
+    "MultiAZ": {
+      "Type": "String",
+      "Default": true,
+      "Description": "Provides enhanced availablily for RDS"
+    },
+    "Port": {
+      "Type": "String",
+      "Default": "5432"
+    },
+    "PubliclyAccessible": {
+      "Type": "String",
+      "Default": false
+    },
+    "StorageType": {
+      "Type": "String",
+      "Default": "gp2"
+    },
+    "RDSSecurityGroup": {
+      "Type": "String",
+      "Default": "sg-"
+    },
+    "PublicSubnets": {
+      "Type": "List<AWS::EC2::Subnet::Id>",
+      "Default": "subnet-"
+    }
+  },
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "ServiceComponentRDS": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "AllocatedStorage": {
+          "Ref": "AllocatedStorage"
+        },
+        "BackupRetentionPeriod": {
+          "Ref": "BackupRetentionPeriod"
+        },
+        "DBInstanceClass": {
+          "Ref": "DBInstanceClass"
+        },
+        "DBInstanceIdentifier": {
+          "Ref": "DBInstanceIdentifier"
+        },
+        "DBName": {
+          "Ref": "DBName"
+        },
+        "Engine": "postgres",
+        "MasterUsername": {
+          "Ref": "MasterUsername"
+        },
+        "MasterUserPassword": {
+          "Ref": "MasterUserPassword"
+        },
+        "MultiAZ": {
+          "Ref": "MultiAZ"
+        },
+        "Port": {
+          "Ref": "Port"
+        },
+        "PubliclyAccessible": {
+          "Ref": "PubliclyAccessible"
+        },
+        "StorageType": {
+          "Ref": "StorageType"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "RDSSecurityGroup"
+          }
+        ],
+        "DBSubnetGroupName": {
+          "Ref": "ServiceSubnetRDS"
+        }
+      }
+    },
+    "ServiceSubnetRDS": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "VPC access",
+        "SubnetIds": {
+          "Ref": "PublicSubnets"
+        }
+      }
+    }
+  }
+}
